@@ -31,7 +31,13 @@ import {
 
 const ADMIN_TOKEN_KEY = 'spilight_admin_access_token';
 const ADMIN_USER_KEY = 'spilight_admin_user';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8082/api';
+const normalizeApiUrl = (url) => {
+  if (!url) return 'http://localhost:8082/api';
+  const trimmedUrl = url.replace(/\/$/, '');
+  return trimmedUrl.endsWith('/api') ? trimmedUrl : `${trimmedUrl}/api`;
+};
+
+const API_BASE_URL = normalizeApiUrl(import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || import.meta.env.VITE_URL);
 
 const getStoredAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
 const setStoredAdminToken = (token) => localStorage.setItem(ADMIN_TOKEN_KEY, token);
