@@ -10,12 +10,17 @@ import {
   Bell,
   CreditCard,
   Database,
+  FileText,
   Gauge,
   LogOut,
+  Mail,
+  Plus,
   Search,
+  Send,
   Server,
   Settings,
   Shield,
+  Trash2,
   Users,
   X,
 } from 'lucide-react';
@@ -30,6 +35,7 @@ import {
 } from 'recharts';
 
 const ADMIN_TOKEN_KEY = 'spilight_admin_access_token';
+
 const ADMIN_USER_KEY = 'spilight_admin_user';
 const normalizeApiUrl = (url) => {
   if (!url) return 'http://localhost:8082/api';
@@ -62,6 +68,7 @@ const navItems = [
   { name: 'Overview', path: '/dashboard', icon: Gauge },
   { name: 'Users', path: '/users', icon: Users },
   { name: 'Billing', path: '/billing', icon: CreditCard },
+  { name: 'Invoice / Receipt', path: '/invoice-receipt', icon: FileText },
   { name: 'Infrastructure', path: '/infrastructure', icon: Server },
   { name: 'Audit logs', path: '/audit-logs', icon: Shield },
   { name: 'Settings', path: '/settings', icon: Settings },
@@ -783,6 +790,153 @@ const BillingPage = () => {
   );
 };
 
+const documentInputClass = 'h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none transition-colors focus:border-black';
+const billableServices = [
+  'Disk (per GB / min)',
+  'Memory (per MB / min)',
+  'Agent Usage',
+  'vCPU (per vCPU / min)',
+  'Network',
+  'Object Storage (per GB-month)',
+];
+
+const InvoiceReceiptPage = () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const [documentType, setDocumentType] = useState('invoice');
+  const [details, setDetails] = useState({
+    recipientName: '',
+    recipientEmail: '',
+    documentNumber: `SPI-${new Date().getFullYear()}-00001`,
+    issueDate: today,
+    dueDate: '',
+    currency: 'USD',
+    taxRate: '0',
+    notes: 'Thank you for choosing Spilight.',
+  });
+  const [items, setItems] = useState([{ id: crypto.randomUUID(), description: billableServices[0], quantity: 1, rate: 0 }]);
+  const [sendState, setSendState] = useState({ sending: false, error: '', success: '' });
+
+  const updateDetail = (field) => (event) => setDetails((current) => ({ ...current, [field]: event.target.value }));
+  const updateItem = (id, field, value) => setItems((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item));
+  const addItem = () => setItems((current) => [...current, { id: crypto.randomUUID(), description: billableServices[0], quantity: 1, rate: 0 }]);
+  const removeItem = (id) => setItems((current) => current.length === 1 ? current : current.filter((item) => item.id !== id));
+  const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.rate || 0), 0);
+  const tax = subtotal * (Number(details.taxRate || 0) / 100);
+  const total = subtotal + tax;
+  const money = (value) => {
+    try {
+      return formatMoney(value, details.currency.toUpperCase() || 'USD');
+    } catch {
+      return `${details.currency.toUpperCase() || 'USD'} ${Number(value || 0).toFixed(2)}`;
+    }
+  };
+  const displayDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+  const sendDocument = async () => {
+    setSendState({ sending: true, error: '', success: '' });
+    try {
+      const response = await adminApi.post('/admin-billing/documents/send', {
+        type: documentType,
+        ...details,
+        items: items.map(({ description, quantity, rate }) => ({ description, quantity: Number(quantity), rate: Number(rate) })),
+      });
+      setSendState({ sending: false, error: '', success: response.data?.message || `${formatStatus(documentType)} sent successfully.` });
+    } catch (error) {
+      setSendState({ sending: false, error: getErrorMessage(error, `Unable to send ${documentType}`), success: '' });
+    }
+  };
+
+  return (
+    <AdminLayout>
+      <div className="space-y-6">
+        <PageHeader eyebrow="Documents" title="Invoice / receipt generator" body="Create a billing document, review exactly how the email will look, and send it to the recipient." />
+
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-black/10 bg-white p-3">
+          <div className="flex rounded-md bg-[#f1f1f1] p-1" role="tablist" aria-label="Document type">
+            {['invoice', 'receipt'].map((type) => (
+              <button key={type} type="button" onClick={() => setDocumentType(type)} className={`rounded px-5 py-2 text-sm font-bold transition-colors ${documentType === type ? 'bg-black text-white shadow-sm' : 'text-black/50 hover:text-black'}`}>
+                {formatStatus(type)}
+              </button>
+            ))}
+          </div>
+          <button onClick={sendDocument} disabled={sendState.sending} className="inline-flex h-10 items-center gap-2 rounded-md bg-black px-4 text-sm font-bold text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/40">
+            <Send size={16} /> {sendState.sending ? 'Sending...' : `Send ${documentType}`}
+          </button>
+        </div>
+
+        {(sendState.error || sendState.success) && <div className={`rounded-lg border p-4 text-sm font-semibold ${sendState.error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{sendState.error || sendState.success}</div>}
+
+        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(500px,1.05fr)]">
+          <section className="space-y-6 rounded-lg border border-black/10 bg-white p-5">
+            <div>
+              <h2 className="text-lg font-semibold tracking-[-0.03em]">Document details</h2>
+              <p className="mt-1 text-sm text-black/45">Changes appear in the preview instantly.</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Recipient name</label><input value={details.recipientName} onChange={updateDetail('recipientName')} className={documentInputClass} placeholder="Customer name" /></div>
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Recipient email</label><input type="email" value={details.recipientEmail} onChange={updateDetail('recipientEmail')} className={documentInputClass} placeholder="customer@example.com" /></div>
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Document number</label><input value={details.documentNumber} onChange={updateDetail('documentNumber')} className={documentInputClass} /></div>
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Currency</label><input value={details.currency} onChange={updateDetail('currency')} maxLength={3} className={`${documentInputClass} uppercase`} /></div>
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Issue date</label><input type="date" value={details.issueDate} onChange={updateDetail('issueDate')} className={documentInputClass} /></div>
+              <div><label className="mb-2 block text-xs font-bold text-black/55">{documentType === 'invoice' ? 'Due date' : 'Payment date'}</label><input type="date" value={details.dueDate} onChange={updateDetail('dueDate')} className={documentInputClass} /></div>
+            </div>
+
+            <div className="border-t border-black/10 pt-5">
+              <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-bold">Line items</h3><button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 text-xs font-bold text-black/55 hover:text-black"><Plus size={15} /> Add item</button></div>
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_70px_100px_36px] gap-2">
+                    <select value={item.description} onChange={(event) => updateItem(item.id, 'description', event.target.value)} className={documentInputClass} aria-label="Service">
+                      {billableServices.map((service) => <option key={service} value={service}>{service}</option>)}
+                    </select>
+                    <input type="number" min="0" value={item.quantity} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} className={documentInputClass} aria-label="Quantity" />
+                    <input type="number" min="0" step="0.01" value={item.rate} onChange={(event) => updateItem(item.id, 'rate', event.target.value)} className={documentInputClass} aria-label="Rate" />
+                    <button type="button" onClick={() => removeItem(item.id)} disabled={items.length === 1} className="grid h-10 place-items-center rounded-md border border-black/10 text-black/40 hover:bg-black hover:text-white disabled:opacity-30" aria-label="Remove item"><Trash2 size={15} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-t border-black/10 pt-5 sm:grid-cols-[120px_1fr]">
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Tax rate (%)</label><input type="number" min="0" step="0.01" value={details.taxRate} onChange={updateDetail('taxRate')} className={documentInputClass} /></div>
+              <div><label className="mb-2 block text-xs font-bold text-black/55">Notes</label><textarea value={details.notes} onChange={updateDetail('notes')} rows={3} className="w-full rounded-md border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black" /></div>
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-lg border border-black/10 bg-[#ececec] xl:sticky xl:top-24">
+            <div className="flex items-center justify-between border-b border-black/10 bg-white px-5 py-4"><div><h2 className="text-sm font-bold">Email preview</h2><p className="mt-0.5 text-xs text-black/42">What {details.recipientEmail || 'the recipient'} will receive</p></div><Mail size={18} className="text-black/40" /></div>
+            <div className="max-h-[calc(100vh-190px)] overflow-y-auto p-4 sm:p-7">
+              <div className="mx-auto max-w-[620px] overflow-hidden rounded-lg bg-white shadow-[0_14px_45px_rgba(0,0,0,0.12)]">
+                <div className="flex items-center justify-between bg-black px-7 py-6 text-white"><div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded bg-white text-sm font-black text-black">S</span><span className="font-semibold">spilight</span></div><span className="text-xs uppercase tracking-[0.18em] text-white/55">{documentType}</span></div>
+                <div className="p-7 sm:p-9">
+                  <p className="text-sm text-black/50">Hello {details.recipientName || 'Customer'},</p>
+                  <h3 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">Your {documentType} is ready.</h3>
+                  <p className="mt-3 text-sm leading-6 text-black/55">{documentType === 'invoice' ? 'Please review the billing details and amount due below.' : 'We received your payment. Here is your receipt for your records.'}</p>
+                  <div className="mt-7 rounded-lg border border-black/10">
+                    <div className="grid grid-cols-2 gap-5 border-b border-black/10 bg-[#f7f7f7] p-5 text-xs">
+                      <div><p className="uppercase tracking-wider text-black/38">{formatStatus(documentType)} number</p><p className="mt-2 font-bold text-black">{details.documentNumber || '—'}</p></div>
+                      <div><p className="uppercase tracking-wider text-black/38">Issued</p><p className="mt-2 font-bold text-black">{displayDate(details.issueDate)}</p></div>
+                      <div><p className="uppercase tracking-wider text-black/38">Billed to</p><p className="mt-2 font-bold text-black">{details.recipientName || 'Customer'}</p><p className="mt-1 text-black/48">{details.recipientEmail || 'customer@example.com'}</p></div>
+                      <div><p className="uppercase tracking-wider text-black/38">{documentType === 'invoice' ? 'Due' : 'Paid'}</p><p className="mt-2 font-bold text-black">{displayDate(details.dueDate)}</p></div>
+                    </div>
+                    <div className="p-5">
+                      <div className="grid grid-cols-[1fr_48px_90px] gap-3 border-b border-black/10 pb-3 text-[10px] font-bold uppercase tracking-wider text-black/35"><span>Description</span><span>Qty</span><span className="text-right">Amount</span></div>
+                      {items.map((item) => <div key={item.id} className="grid grid-cols-[1fr_48px_90px] gap-3 border-b border-black/[0.06] py-3 text-xs"><span className="font-medium">{item.description || 'Untitled item'}</span><span className="text-black/50">{item.quantity || 0}</span><span className="text-right font-medium">{money(Number(item.quantity || 0) * Number(item.rate || 0))}</span></div>)}
+                      <div className="ml-auto mt-5 w-56 space-y-2 text-xs"><div className="flex justify-between text-black/50"><span>Subtotal</span><span>{money(subtotal)}</span></div><div className="flex justify-between text-black/50"><span>Tax ({Number(details.taxRate || 0)}%)</span><span>{money(tax)}</span></div><div className="flex justify-between border-t border-black/10 pt-3 text-sm font-bold"><span>{documentType === 'invoice' ? 'Amount due' : 'Total paid'}</span><span>{money(total)}</span></div></div>
+                    </div>
+                  </div>
+                  {details.notes && <p className="mt-6 rounded-md bg-[#f7f7f7] p-4 text-xs leading-5 text-black/50">{details.notes}</p>}
+                  <p className="mt-8 text-xs leading-5 text-black/38">Questions? Reply to this email and the Spilight team will help.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+};
+
 const InfrastructurePage = () => (
   <AdminLayout>
     <div className="space-y-8">
@@ -882,6 +1036,7 @@ function App() {
       <Route path="/dashboard" element={<ProtectedAdminRoute><Overview /></ProtectedAdminRoute>} />
       <Route path="/users" element={<ProtectedAdminRoute><UsersPage /></ProtectedAdminRoute>} />
       <Route path="/billing" element={<ProtectedAdminRoute><BillingPage /></ProtectedAdminRoute>} />
+      <Route path="/invoice-receipt" element={<ProtectedAdminRoute><InvoiceReceiptPage /></ProtectedAdminRoute>} />
       <Route path="/infrastructure" element={<ProtectedAdminRoute><InfrastructurePage /></ProtectedAdminRoute>} />
       <Route path="/audit-logs" element={<ProtectedAdminRoute><AuditLogsPage /></ProtectedAdminRoute>} />
       <Route path="/settings" element={<ProtectedAdminRoute><SettingsPage /></ProtectedAdminRoute>} />
