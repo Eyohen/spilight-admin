@@ -6,8 +6,9 @@ import { Link, Navigate, NavLink, Route, Routes, useNavigate } from 'react-route
 import {
   Activity,
   AlertTriangle,
-  ArrowUpRight,
   Bell,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   Database,
   FileText,
@@ -25,9 +26,12 @@ import {
   X,
 } from 'lucide-react';
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
+  Cell,
   CartesianGrid,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -107,15 +111,23 @@ const chartData = [
   { day: 'Sun', revenue: 8200, compute: 1040 },
 ];
 
-const StatCard = ({ label, value, detail, icon: Icon }) => (
-  <article className="rounded-lg border border-black/10 bg-white p-5">
+const operationalAlerts = [
+  { text: 'Failed deployment', tone: 'text-red-300' },
+  { text: 'Receipt successfully sent', tone: 'text-emerald-300' },
+  { text: 'Pending support', tone: 'text-amber-300' },
+  { text: 'Discontinued account', tone: 'text-red-300' },
+  { text: 'Reminder subscription sent', tone: 'text-emerald-300' },
+];
+
+const StatCard = ({ label, value, detail, icon: Icon, compact = false }) => (
+  <article className={`rounded-lg border border-black/10 bg-white ${compact ? 'p-4' : 'p-5'}`}>
     <div className="flex items-start justify-between gap-4">
       <div>
         <p className="text-sm text-black/48">{label}</p>
-        <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-black">{value}</p>
-        <p className="mt-2 text-xs text-black/42">{detail}</p>
+        <p className={`${compact ? 'mt-1.5 text-2xl' : 'mt-3 text-3xl'} font-semibold tracking-[-0.04em] text-black`}>{value}</p>
+        <p className={`${compact ? 'mt-1' : 'mt-2'} text-xs text-black/42`}>{detail}</p>
       </div>
-      <span className="grid h-10 w-10 place-items-center rounded-md bg-black text-white">
+      <span className={`grid place-items-center rounded-md bg-black text-white ${compact ? 'h-9 w-9' : 'h-10 w-10'}`}>
         <Icon size={18} />
       </span>
     </div>
@@ -380,9 +392,14 @@ const Overview = () => {
       overdueInvoiceCount: 0,
       overdueRevenue: 0,
     },
-    chart: [],
+    accountTypes: {
+      personal: 0,
+      business: 0,
+    },
+    latestAccounts: [],
     alerts: [],
   });
+  const [accountsPage, setAccountsPage] = useState(1);
   const [dashboardState, setDashboardState] = useState({
     loading: true,
     error: '',
@@ -395,9 +412,25 @@ const Overview = () => {
       setDashboardState({ loading: true, error: '' });
 
       try {
-        const response = await adminApi.get('/admin-billing/dashboard');
+        const [dashboardResponse, usersResponse] = await Promise.all([
+          adminApi.get('/admin-billing/dashboard'),
+          adminApi.get('/admin-auth/users'),
+        ]);
+
         if (isMounted) {
-          setDashboard(response.data?.data || dashboard);
+          const dashboardData = dashboardResponse.data?.data || dashboard;
+          const users = usersResponse.data?.data?.users || [];
+          const personalAccounts = users.filter((user) => ['personal', 'creator'].includes(String(user.userType).toLowerCase())).length;
+          const businessAccounts = users.filter((user) => ['business', 'brand'].includes(String(user.userType).toLowerCase())).length;
+
+          setDashboard({
+            ...dashboardData,
+            accountTypes: {
+              personal: personalAccounts,
+              business: businessAccounts,
+            },
+            latestAccounts: users,
+          });
         }
       } catch (error) {
         if (isMounted) {
@@ -422,65 +455,233 @@ const Overview = () => {
   }, []);
 
   const { metrics } = dashboard;
+  const accountsPerPage = 3;
+  const totalAccountPages = Math.max(1, Math.ceil((dashboard.latestAccounts?.length || 0) / accountsPerPage));
+  const visibleAccounts = (dashboard.latestAccounts || []).slice(
+    (accountsPage - 1) * accountsPerPage,
+    accountsPage * accountsPerPage,
+  );
 
   return (
     <AdminLayout>
-      <div className="space-y-8">
-        <PageHeader eyebrow="Overview" title="Platform command center" body="Monitor revenue, users, invoices, failed payments, and operational risks from live API data." />
+      <div className="space-y-2">
+        <PageHeader compact title="Good Evening Simi," body="Here's what's happening across your platform." />
         {dashboardState.error && <div className="rounded-lg border border-black/10 bg-white p-4 text-sm font-medium text-black">{dashboardState.error}</div>}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Active users" value={dashboardState.loading ? '...' : String(metrics.activeUsers)} detail={`${metrics.totalUsers} total users`} icon={Users} />
-          <StatCard label="Paid revenue" value={dashboardState.loading ? '...' : formatMoney(metrics.paidRevenue)} detail={`${metrics.paidInvoiceCount} paid invoices`} icon={CreditCard} />
-          <StatCard label="Open invoices" value={dashboardState.loading ? '...' : formatMoney(metrics.openRevenue)} detail={`${metrics.openInvoiceCount} invoices pending`} icon={Activity} />
-          <StatCard label="Overdue" value={dashboardState.loading ? '...' : String(metrics.overdueInvoiceCount)} detail={`${formatMoney(metrics.overdueRevenue)} past due`} icon={AlertTriangle} />
-        </div>
-        <div className="grid gap-6 xl:grid-cols-[1fr_390px]">
-          <section className="rounded-lg border border-black/10 bg-white p-5">
-            <div className="mb-6 flex items-center justify-between">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px_390px]">
+          <section className="rounded-lg border border-black/10 bg-white p-4">
+            <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
-                <h2 className="text-lg font-semibold tracking-[-0.03em]">Revenue and invoices</h2>
-                <p className="mt-1 text-sm text-black/46">Seven-day trend from invoices</p>
+                <h2 className="text-lg font-semibold tracking-[-0.03em]">Personal and business accounts</h2>
+                <p className="mt-1 text-sm text-black/46">Account distribution across the platform</p>
               </div>
-              <ArrowUpRight size={18} />
+              <div className="flex items-center gap-4 text-xs font-medium text-black/58">
+                <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-black" />Personal</span>
+                <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-black/35" />Business</span>
+              </div>
             </div>
-            <div className="h-[320px]">
+            <div className="h-[190px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dashboard.chart}>
-                  <CartesianGrid stroke="#e5e5e5" vertical={false} />
-                  <XAxis dataKey="day" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="revenue" stroke="#000" fill="#000" fillOpacity={0.12} />
-                  <Area type="monotone" dataKey="invoices" stroke="#666" fill="#666" fillOpacity={0.08} />
-                </AreaChart>
+                <BarChart
+                  layout="vertical"
+                  data={[
+                    { name: 'Personal', accounts: dashboard.accountTypes?.personal || 0, color: '#000000' },
+                    { name: 'Business', accounts: dashboard.accountTypes?.business || 0, color: '#a3a3a3' },
+                  ]}
+                  margin={{ top: 16, right: 48, bottom: 16, left: 8 }}
+                  barCategoryGap="38%"
+                >
+                  <CartesianGrid stroke="#e5e5e5" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" width={72} tickLine={false} axisLine={false} />
+                  <Tooltip cursor={{ fill: '#f5f5f5' }} formatter={(value) => [value, 'Accounts']} />
+                  <Bar dataKey="accounts" name="Accounts" radius={[0, 5, 5, 0]} minPointSize={4} label={{ position: 'right', fill: '#525252', fontSize: 12 }}>
+                    {['#000000', '#a3a3a3'].map((color) => <Cell key={color} fill={color} />)}
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </section>
-          <section className="rounded-lg border border-black/10 bg-white">
-            <div className="border-b border-black/10 p-5">
-              <h2 className="text-lg font-semibold tracking-[-0.03em]">Operational alerts</h2>
+          <section className="rounded-lg border border-black/10 bg-white p-4">
+            <div>
+              <h2 className="text-lg font-semibold tracking-[-0.03em]">Revenue status</h2>
+              <p className="mt-1 text-sm text-black/46">Paid revenue and open invoices</p>
             </div>
-            <div className="divide-y divide-black/10">
-              {(dashboardState.loading ? ['Loading dashboard alerts...'] : dashboard.alerts).map((item) => (
-                <div key={item} className="flex gap-3 p-5">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-black" />
-                  <p className="text-sm leading-6 text-black/62">{item}</p>
+            <div className="relative mt-1 h-[145px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Paid revenue', value: Number(metrics.paidRevenue) || 0, color: '#000000' },
+                      { name: 'Open invoices', value: Number(metrics.openRevenue) || 0, color: '#a3a3a3' },
+                    ]}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={42}
+                    outerRadius={62}
+                    paddingAngle={2}
+                    stroke="#ffffff"
+                    strokeWidth={3}
+                  >
+                    {['#000000', '#a3a3a3'].map((color) => <Cell key={color} fill={color} />)}
+                  </Pie>
+                  <Tooltip formatter={(value, name) => [formatMoney(value), name]} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-black/40">Total</p>
+                  <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-black">
+                    {dashboardState.loading ? '...' : formatMoney((Number(metrics.paidRevenue) || 0) + (Number(metrics.openRevenue) || 0))}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 border-t border-black/10 pt-3">
+              {[
+                { label: 'Paid revenue', value: metrics.paidRevenue, color: 'bg-black' },
+                { label: 'Open invoices', value: metrics.openRevenue, color: 'bg-black/35' },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex items-center gap-2 text-black/58">
+                    <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
+                    {item.label}
+                  </span>
+                  <span className="font-semibold text-black">{dashboardState.loading ? '...' : formatMoney(item.value)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="rounded-lg border border-white/10 bg-[#111111] shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
+            <div className="flex items-center justify-between px-4 pb-2 pt-4">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-7 w-7 place-items-center rounded-md bg-white/10 text-white">
+                  <AlertTriangle size={14} />
+                </span>
+                <h2 className="text-lg font-semibold tracking-[-0.03em] text-white">Operational alerts</h2>
+              </div>
+              <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-white/55">
+                {operationalAlerts.length} updates
+              </span>
+            </div>
+            <div className="space-y-1.5 px-4 pb-4">
+              {operationalAlerts.map((item) => (
+                <div
+                  key={item.text}
+                  className="flex items-center gap-3 rounded-md bg-white/[0.045] px-3 py-2 transition-colors hover:bg-white/[0.075]"
+                >
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${item.tone}`} />
+                  <p className={`text-sm font-medium leading-5 ${item.tone}`}>
+                    {item.text}
+                  </p>
                 </div>
               ))}
             </div>
           </section>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard compact label="Customers" value={dashboardState.loading ? '...' : String(metrics.totalUsers)} detail="Total registered customers" icon={Users} />
+          <StatCard compact label="Active users" value={dashboardState.loading ? '...' : String(metrics.activeUsers)} detail="Currently active users" icon={Users} />
+          <StatCard compact label="Paid Revenue" value={dashboardState.loading ? '...' : formatMoney(metrics.paidRevenue)} detail={`${metrics.paidInvoiceCount} paid invoices`} icon={CreditCard} />
+          <StatCard compact label="Open Invoices" value={dashboardState.loading ? '...' : formatMoney(metrics.openRevenue)} detail={`${metrics.openInvoiceCount} invoices pending`} icon={Activity} />
+        </div>
+        <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
+          <div className="flex flex-col justify-between gap-2 border-b border-black/10 px-4 py-2.5 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-semibold tracking-[-0.03em]">Latest Accounts</h2>
+            </div>
+            {!dashboardState.loading && dashboard.latestAccounts.length > 0 && (
+              <p className="text-xs font-medium text-black/42">
+                Showing {(accountsPage - 1) * accountsPerPage + 1}–{Math.min(accountsPage * accountsPerPage, dashboard.latestAccounts.length)} of {dashboard.latestAccounts.length}
+              </p>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left">
+              <thead className="border-b border-black/10 bg-[#fafafa] text-xs uppercase tracking-[0.12em] text-black/40">
+                <tr>
+                  {['ID', 'Customer Name', 'Account Type', 'Subscription Type', 'Status'].map((column) => (
+                    <th key={column} className="px-4 py-2 font-bold">{column}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {dashboardState.loading && (
+                  <tr><td colSpan={5} className="px-4 py-5 text-center text-sm text-black/46">Loading latest accounts...</td></tr>
+                )}
+                {!dashboardState.loading && visibleAccounts.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-5 text-center text-sm text-black/46">No accounts found.</td></tr>
+                )}
+                {!dashboardState.loading && visibleAccounts.map((account) => {
+                  const accountType = ['business', 'brand'].includes(String(account.userType).toLowerCase()) ? 'Business' : 'Personal';
+                  const subscriptionType = account.subscriptionType || account.plan || 'Hobby';
+                  const status = String(account.status).toLowerCase() === 'active' ? 'Active' : 'Inactive';
+
+                  return (
+                    <tr key={account.id}>
+                      <td className="px-4 py-2.5 font-mono text-xs font-semibold text-black/58" title={String(account.id)}>
+                        {String(account.id).slice(0, 8).toUpperCase()}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <p className="text-sm font-medium text-black">{account.name || account.email}</p>
+                        <p className="mt-0.5 text-xs text-black/42">{account.email}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-sm text-black/62">{accountType}</td>
+                      <td className="px-4 py-2.5 text-sm text-black/62">{subscriptionType}</td>
+                      <td className="px-4 py-2.5"><StatusBadge status={status} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {totalAccountPages > 1 && (
+            <div className="flex items-center justify-between gap-4 border-t border-black/10 px-4 py-2.5">
+              <button
+                type="button"
+                onClick={() => setAccountsPage((page) => Math.max(1, page - 1))}
+                disabled={accountsPage === 1}
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-black/10 px-3 text-xs font-bold transition-colors hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white disabled:hover:text-black"
+              >
+                <ChevronLeft size={14} /> Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalAccountPages }, (_, index) => index + 1).map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setAccountsPage(page)}
+                    aria-label={`Go to page ${page}`}
+                    aria-current={accountsPage === page ? 'page' : undefined}
+                    className={`grid h-8 w-8 place-items-center rounded-md text-xs font-bold ${accountsPage === page ? 'bg-black text-white' : 'border border-black/10 text-black/58 hover:border-black hover:text-black'}`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setAccountsPage((page) => Math.min(totalAccountPages, page + 1))}
+                disabled={accountsPage === totalAccountPages}
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-black/10 px-3 text-xs font-bold transition-colors hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white disabled:hover:text-black"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </section>
       </div>
     </AdminLayout>
   );
 };
 
-const PageHeader = ({ eyebrow, title, body, action }) => (
-  <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+const PageHeader = ({ eyebrow, title, body, action, compact = false }) => (
+  <div className={`flex flex-col justify-between lg:flex-row lg:items-end ${compact ? 'gap-2' : 'gap-5'}`}>
     <div>
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-black/42">{eyebrow}</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-black">{title}</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-black/54">{body}</p>
+      {eyebrow && <p className="text-xs font-bold uppercase tracking-[0.18em] text-black/42">{eyebrow}</p>}
+      <h1 className={`${compact ? (eyebrow ? 'mt-1 text-3xl' : 'text-3xl') : (eyebrow ? 'mt-3 text-4xl' : 'text-4xl')} font-semibold tracking-[-0.04em] text-black`}>{title}</h1>
+      <p className={`${compact ? 'mt-1 leading-5' : 'mt-2 leading-6'} max-w-2xl text-sm text-black/54`}>{body}</p>
     </div>
     {action}
   </div>
