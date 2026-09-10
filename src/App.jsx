@@ -2,27 +2,34 @@
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Link, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
+  BadgeDollarSign,
   Bell,
+  Building2,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock,
   CreditCard,
   Database,
   FileText,
+  Fingerprint,
+  FolderKanban,
   Gauge,
+  HardDrive,
   LogOut,
   Mail,
-  Plus,
   Search,
   Send,
   Server,
   Settings,
   Shield,
-  Trash2,
+  UserRound,
   Users,
+  Wifi,
   X,
 } from 'lucide-react';
 import {
@@ -71,7 +78,10 @@ adminApi.interceptors.request.use((config) => {
 const navItems = [
   { name: 'Overview', path: '/dashboard', icon: Gauge },
   { name: 'Users', path: '/users', icon: Users },
-  { name: 'Billing', path: '/billing', icon: CreditCard },
+  { name: 'Billing', path: '/billing', icon: CreditCard, children: [
+    { name: 'Rev&Inv', path: '/billing' },
+    { name: 'Receipts', path: '/billing/receipts' },
+  ] },
   { name: 'Invoice / Receipt', path: '/invoice-receipt', icon: FileText },
   { name: 'Infrastructure', path: '/infrastructure', icon: Server },
   { name: 'Audit logs', path: '/audit-logs', icon: Shield },
@@ -299,7 +309,14 @@ const Login = () => {
 
 const AdminLayout = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const billingRouteActive = location.pathname.startsWith('/billing');
+  const [billingMenuOpen, setBillingMenuOpen] = useState(billingRouteActive);
+
+  useEffect(() => {
+    if (billingRouteActive) setBillingMenuOpen(true);
+  }, [billingRouteActive]);
 
   const signOut = async () => {
     try {
@@ -332,7 +349,36 @@ const AdminLayout = ({ children }) => {
           </div>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          {navItems.map(({ name, path, icon: Icon }) => (
+          {navItems.map(({ name, path, icon: Icon, children: childItems }) => childItems ? (
+            <div key={path}>
+              <button
+                type="button"
+                onClick={() => setBillingMenuOpen((open) => !open)}
+                aria-expanded={billingMenuOpen}
+                aria-controls="billing-submenu"
+                className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-white/10 hover:text-white ${billingRouteActive ? 'bg-white/10 text-white' : 'text-white/56'}`}
+              >
+                <Icon size={18} />
+                <span className="flex-1 text-left">{name}</span>
+                <ChevronRight size={15} className={`text-white/40 transition-transform duration-200 ${billingMenuOpen ? 'rotate-90' : ''}`} />
+              </button>
+              {billingMenuOpen && (
+                <div id="billing-submenu" className="ml-6 mt-1 space-y-1 border-l border-white/15 pl-3">
+                  {childItems.map((child) => (
+                    <NavLink
+                      key={child.path}
+                      to={child.path}
+                      end={child.path === '/billing'}
+                      onClick={() => setSidebarOpen(false)}
+                      className={({ isActive }) => `flex items-center rounded-md px-3 py-2 text-[13px] font-medium transition-colors ${isActive ? 'bg-white text-black' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}
+                    >
+                      {child.name}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
             <NavLink
               key={path}
               to={path}
@@ -688,10 +734,10 @@ const PageHeader = ({ eyebrow, title, body, action, compact = false }) => (
 );
 
 const UsersPage = () => {
+  const navigate = useNavigate();
   const [adminUsers, setAdminUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [usersError, setUsersError] = useState('');
-  const [selectedUser, setSelectedUser] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -728,49 +774,178 @@ const UsersPage = () => {
       <p className="font-medium text-black">{user.name}</p>
       <p className="mt-1 text-xs text-black/42">{user.email}</p>
     </div>,
-    user.phone || 'Not provided',
     user.userType,
+    user.subscriptionPlan || 'Hobby',
+    new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     <StatusBadge key={`${user.email}-status`} status={user.status === 'active' ? 'Active' : user.status} />,
     user.verified ? 'Verified' : 'Unverified',
-    <button key={`${user.email}-manage`} onClick={() => setSelectedUser(user)} className="rounded-md border border-black/10 px-3 py-1.5 text-xs font-bold hover:bg-black hover:text-white">Manage</button>,
+    <button key={`${user.email}-view`} onClick={() => navigate(`/users/${user.id}`)} className="rounded-md border border-black/10 px-3 py-1.5 text-xs font-bold hover:bg-black hover:text-white">View</button>,
   ]);
+  const normalizedUserStatuses = adminUsers.map((user) => String(user.status || '').toLowerCase());
+  const now = new Date();
+  const newUsersThisMonth = adminUsers.filter((user) => {
+    const registeredAt = new Date(user.createdAt);
+    return !Number.isNaN(registeredAt.getTime())
+      && registeredAt.getFullYear() === now.getFullYear()
+      && registeredAt.getMonth() === now.getMonth();
+  }).length;
+  const userMetrics = [
+    { label: 'Total', value: adminUsers.length, detail: 'All registered accounts', icon: Users },
+    { label: 'Active', value: normalizedUserStatuses.filter((status) => status === 'active').length, detail: 'Currently active accounts', icon: Activity },
+    { label: 'Deactivated', value: normalizedUserStatuses.filter((status) => ['deactivated', 'inactive', 'disabled'].includes(status)).length, detail: 'Deactivated accounts', icon: AlertTriangle },
+    { label: 'New', value: newUsersThisMonth, detail: 'Registered this month', icon: Clock },
+  ];
 
   return (
     <AdminLayout>
       <div className="space-y-8">
         <PageHeader eyebrow="Users" title="User and workspace management" body="Review accounts, workspace plans, risk status, and support actions." action={<button className="h-10 rounded-md bg-black px-4 text-sm font-bold text-white">Export users</button>} />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {userMetrics.map((metric) => (
+            <StatCard
+              key={metric.label}
+              compact
+              label={metric.label}
+              value={loadingUsers ? '...' : String(metric.value)}
+              detail={metric.detail}
+              icon={metric.icon}
+            />
+          ))}
+        </div>
         {usersError && <div className="rounded-lg border border-black/10 bg-white p-4 text-sm font-medium text-black">{usersError}</div>}
         {loadingUsers ? (
           <div className="rounded-lg border border-black/10 bg-white p-6 text-sm text-black/54">Loading users...</div>
         ) : (
           <DataTable
-            columns={['User', 'Phone', 'Type', 'Status', 'Email', '']}
+            columns={['User', 'Type', 'Plan', 'Date joined', 'Status', 'Email', '']}
             rows={rows}
+            columnWidths={['26%', '10%', '12%', '15%', '12%', '12%', '13%']}
           />
         )}
-        <AdminModal open={Boolean(selectedUser)} onClose={() => setSelectedUser(null)} title="Manage user">
-          {selectedUser && (
-            <div className="space-y-5">
-              <div className="rounded-lg border border-black/10 bg-[#f7f7f7] p-4">
-                <p className="font-semibold">{selectedUser.name}</p>
-                <p className="mt-1 text-sm text-black/52">{selectedUser.email}</p>
-                <p className="mt-1 text-sm text-black/52">{selectedUser.phone || 'No phone number'} · {selectedUser.userType}</p>
+      </div>
+    </AdminLayout>
+  );
+};
+
+const UserDetailsPage = () => {
+  const { userId } = useParams();
+  const [activeTab, setActiveTab] = useState('profile');
+  const [pageState, setPageState] = useState({ loading: true, error: '', user: null, invoices: [] });
+  const [deactivating, setDeactivating] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([adminApi.get('/admin-auth/users'), adminApi.get('/admin-billing/invoices')])
+      .then(([usersResponse, invoicesResponse]) => {
+        if (!isMounted) return;
+        const user = (usersResponse.data?.data?.users || []).find((item) => item.id === userId);
+        setPageState({ loading: false, error: user ? '' : 'User not found', user: user || null, invoices: (invoicesResponse.data?.data?.invoices || []).filter((invoice) => invoice.userId === userId) });
+      })
+      .catch((error) => {
+        if (isMounted) setPageState({ loading: false, error: getErrorMessage(error, 'Unable to load user'), user: null, invoices: [] });
+      });
+    return () => { isMounted = false; };
+  }, [userId]);
+
+  if (pageState.loading) return <AdminLayout><div className="rounded-lg border border-black/10 bg-white p-6 text-sm text-black/54">Loading user...</div></AdminLayout>;
+  if (!pageState.user) return <AdminLayout><div className="rounded-lg border border-black/10 bg-white p-6"><p className="font-semibold">{pageState.error}</p><Link to="/users" className="mt-4 inline-flex text-sm font-bold underline">Back to users</Link></div></AdminLayout>;
+
+  const user = pageState.user;
+  const initials = user.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
+  const joined = new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const paidInvoices = pageState.invoices.filter((invoice) => invoice.status === 'paid');
+  const totalPaid = paidInvoices.reduce((total, invoice) => total + Number(invoice.amount || 0), 0);
+  const billingCurrency = paidInvoices[0]?.currency || pageState.invoices[0]?.currency || 'USD';
+  const nextBillingInvoice = pageState.invoices
+    .filter((invoice) => invoice.status === 'open' && invoice.dueDate)
+    .sort((first, second) => new Date(first.dueDate) - new Date(second.dueDate))[0];
+  const nextBillingDate = nextBillingInvoice
+    ? new Date(`${nextBillingInvoice.dueDate}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'Not scheduled';
+  const deactivateAccount = async () => {
+    if (!window.confirm(`Deactivate ${user.name}'s account? They will no longer be able to use the account.`)) return;
+    setDeactivating(true);
+    try {
+      await adminApi.patch(`/admin-auth/users/${user.id}/status`, { status: 'inactive' });
+      setPageState((current) => ({ ...current, user: { ...current.user, status: 'inactive' } }));
+    } catch (error) {
+      setPageState((current) => ({ ...current, error: getErrorMessage(error, 'Unable to deactivate account') }));
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
+  return (
+    <AdminLayout>
+      <div className="space-y-6">
+        <Link to="/users" className="inline-flex items-center gap-2 text-sm font-bold text-black/55 hover:text-black"><ChevronLeft size={16} /> Back to users</Link>
+        <section className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
+          <div className="flex flex-col gap-5 px-6 py-6 sm:flex-row sm:items-center">
+            <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-black text-xl font-bold text-white">{initials}</div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-semibold tracking-[-0.04em]">{user.name}</h1>
+                {user.status === 'active'
+                  ? <span className="rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">Active</span>
+                  : <StatusBadge status={user.status} />}
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {['Impersonate', 'Suspend', 'Reset MFA'].map((label) => <button key={label} className="h-10 rounded-md border border-black/10 text-sm font-bold hover:bg-black hover:text-white">{label}</button>)}
+              <p className="mt-1 text-sm text-black/48">{user.email}</p>
+              <p className="mt-2 text-xs text-black/42">Joined {joined} · {user.subscriptionPlan || 'Hobby'} plan</p>
+            </div>
+          </div>
+          <div className="flex gap-8 border-t border-black/10 px-6">
+            {[['profile', 'Profile'], ['billing', 'Billing history']].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveTab(value)} className={`border-b-2 py-4 text-sm font-bold ${activeTab === value ? 'border-black text-black' : 'border-transparent text-black/40 hover:text-black'}`}>{label}</button>)}
+          </div>
+        </section>
+        {activeTab === 'profile' ? (
+          <div className="space-y-6">
+            {pageState.error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{pageState.error}</div>}
+            <section className="rounded-xl border border-black/10 bg-white p-6">
+              <h2 className="text-lg font-semibold">Profile</h2>
+              <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  ['Name', user.name, UserRound],
+                  ['Email', user.email, Mail],
+                  ['User ID', user.id, Fingerprint],
+                  ['Account type', formatStatus(user.userType), Building2],
+                  ['Current plan', user.subscriptionPlan || 'Hobby', BadgeDollarSign],
+                  ['Next billing date', nextBillingDate, CalendarDays],
+                  ['Storage used', user.storageUsed || 'Not available', HardDrive],
+                  ['Bandwidth', user.bandwidth || 'Not available', Wifi],
+                  ['Projects', user.projectCount ?? 'Not available', FolderKanban],
+                ].map(([label, value, Icon]) => (
+                  <div key={label} className="flex min-w-0 items-start gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-black/[0.05] text-black/55"><Icon size={17} /></span>
+                    <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-black/35">{label}</p><p className="mt-1.5 break-words text-sm font-semibold">{value}</p></div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="flex flex-col justify-between gap-4 rounded-xl border border-red-200 bg-red-50/60 p-6 sm:flex-row sm:items-center">
+              <div><h2 className="font-semibold text-red-800">Deactivate account</h2><p className="mt-1 text-sm text-red-700/70">Prevent this user from accessing their account.</p></div>
+              <button type="button" onClick={deactivateAccount} disabled={deactivating || user.status === 'inactive'} className="h-10 shrink-0 rounded-md bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300">{user.status === 'inactive' ? 'Account deactivated' : deactivating ? 'Deactivating...' : 'Deactivate account'}</button>
+            </section>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex justify-end">
+              <div className="w-full sm:max-w-xs">
+                <StatCard compact label="Total paid" value={formatMoney(totalPaid, billingCurrency)} detail={`${paidInvoices.length} paid invoice${paidInvoices.length === 1 ? '' : 's'}`} icon={CreditCard} />
               </div>
             </div>
-          )}
-        </AdminModal>
+            <DataTable columns={['Invoice', 'Description', 'Amount', 'Status', 'Issued']} rows={pageState.invoices.map((invoice) => [invoice.invoiceNumber, invoice.title, formatMoney(invoice.amount, invoice.currency), <StatusBadge key={invoice.id} status={formatStatus(invoice.status)} />, invoice.issuedDate])} />
+          </div>
+        )}
       </div>
     </AdminLayout>
   );
 };
 
 const BillingPage = () => {
+  const navigate = useNavigate();
   const [billingUsers, setBillingUsers] = useState([]);
   const [billingInvoices, setBillingInvoices] = useState([]);
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [pendingStatusUpdate, setPendingStatusUpdate] = useState(null);
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceForm);
   const [billingState, setBillingState] = useState({
     loading: true,
@@ -782,13 +957,24 @@ const BillingPage = () => {
     setBillingState((current) => ({ ...current, loading: true, error: '' }));
 
     try {
-      const [usersResponse, invoicesResponse] = await Promise.all([
+      const [usersResponse, invoicesResponse, receiptsResponse] = await Promise.all([
         adminApi.get('/admin-auth/users'),
         adminApi.get('/admin-billing/invoices'),
+        adminApi.get('/admin-billing/receipts'),
       ]);
 
       setBillingUsers(usersResponse.data?.data?.users || []);
-      setBillingInvoices(invoicesResponse.data?.data?.invoices || []);
+      const receipts = receiptsResponse.data?.data?.receipts || [];
+      const receiptInvoiceIds = new Set(receipts.map((receipt) => receipt.sourceInvoiceId).filter(Boolean));
+      const receiptInvoiceNumbers = new Set(receipts
+        .map((receipt) => receipt.receiptNumber?.startsWith('RCT-') ? receipt.receiptNumber.slice(4) : null)
+        .filter(Boolean));
+      setBillingInvoices((invoicesResponse.data?.data?.invoices || []).map((invoice) => ({
+        ...invoice,
+        receiptSent: invoice.receiptSent
+          || receiptInvoiceIds.has(invoice.id)
+          || receiptInvoiceNumbers.has(invoice.invoiceNumber),
+      })));
     } catch (error) {
       setBillingState((current) => ({
         ...current,
@@ -804,7 +990,6 @@ const BillingPage = () => {
   }, []);
 
   const openCreateInvoice = () => {
-    setSelectedInvoice(null);
     setInvoiceForm({
       ...emptyInvoiceForm,
       userId: billingUsers[0]?.id || '',
@@ -812,22 +997,7 @@ const BillingPage = () => {
     });
   };
 
-  const openEditInvoice = (invoice) => {
-    setSelectedInvoice(invoice);
-    setInvoiceForm({
-      userId: invoice.userId,
-      title: invoice.title,
-      amount: String(invoice.amount),
-      currency: invoice.currency,
-      status: invoice.status,
-      issuedDate: invoice.issuedDate || new Date().toISOString().slice(0, 10),
-      dueDate: invoice.dueDate || '',
-      notes: invoice.notes || '',
-    });
-  };
-
   const closeInvoiceModal = () => {
-    setSelectedInvoice(null);
     setInvoiceForm(emptyInvoiceForm);
   };
 
@@ -843,11 +1013,7 @@ const BillingPage = () => {
     setBillingState((current) => ({ ...current, saving: true, error: '' }));
 
     try {
-      if (selectedInvoice) {
-        await adminApi.put(`/admin-billing/invoices/${selectedInvoice.id}`, invoiceForm);
-      } else {
-        await adminApi.post('/admin-billing/invoices', invoiceForm);
-      }
+      await adminApi.post('/admin-billing/invoices', invoiceForm);
 
       await loadBilling();
       closeInvoiceModal();
@@ -868,6 +1034,7 @@ const BillingPage = () => {
       const response = await adminApi.patch(`/admin-billing/invoices/${invoice.id}/status`, { status });
       const updatedInvoice = response.data?.data?.invoice;
       setBillingInvoices((current) => current.map((item) => item.id === updatedInvoice.id ? updatedInvoice : item));
+      setPendingStatusUpdate(null);
     } catch (error) {
       setBillingState((current) => ({
         ...current,
@@ -876,12 +1043,16 @@ const BillingPage = () => {
     }
   };
 
+  const generateReceipt = (invoice) => {
+    navigate('/invoice-receipt', { state: { receiptInvoice: invoice } });
+  };
+
   const openInvoices = billingInvoices.filter((invoice) => ['open', 'overdue'].includes(invoice.status));
   const paidInvoices = billingInvoices.filter((invoice) => invoice.status === 'paid');
   const openTotal = openInvoices.reduce((total, invoice) => total + Number(invoice.amount || 0), 0);
   const paidTotal = paidInvoices.reduce((total, invoice) => total + Number(invoice.amount || 0), 0);
   const overdueInvoices = billingInvoices.filter((invoice) => invoice.status === 'overdue');
-  const modalOpen = Boolean(selectedInvoice) || invoiceForm !== emptyInvoiceForm;
+  const modalOpen = invoiceForm !== emptyInvoiceForm;
 
   const rows = billingInvoices.map((invoice) => [
     <div key={`${invoice.id}-invoice`}>
@@ -896,7 +1067,9 @@ const BillingPage = () => {
     <select
       key={`${invoice.id}-status`}
       value={invoice.status}
-      onChange={(event) => updateInvoiceStatus(invoice, event.target.value)}
+      onChange={(event) => {
+        if (event.target.value !== invoice.status) setPendingStatusUpdate({ invoice, status: event.target.value });
+      }}
       className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs font-bold outline-none focus:border-black"
     >
       {invoiceStatuses.map((status) => (
@@ -904,7 +1077,11 @@ const BillingPage = () => {
       ))}
     </select>,
     invoice.dueDate || 'No due date',
-    <button key={`${invoice.id}-edit`} onClick={() => openEditInvoice(invoice)} className="rounded-md border border-black/10 px-3 py-1.5 text-xs font-bold hover:bg-black hover:text-white">Edit</button>,
+    invoice.status === 'paid' && invoice.receiptSent ? (
+      <span key={`${invoice.id}-receipt-sent`} className="text-xs font-bold text-emerald-600">Sent</span>
+    ) : invoice.status === 'paid' ? (
+      <button key={`${invoice.id}-receipt`} onClick={() => generateReceipt(invoice)} className="rounded-md bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-black/75">Generate receipt</button>
+    ) : null,
   ]);
 
   return (
@@ -931,7 +1108,7 @@ const BillingPage = () => {
             rows={rows}
           />
         )}
-        <AdminModal open={modalOpen} onClose={closeInvoiceModal} title={selectedInvoice ? 'Edit invoice' : 'Create invoice'}>
+        <AdminModal open={modalOpen} onClose={closeInvoiceModal} title="Create invoice">
           <form onSubmit={saveInvoice} className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -986,6 +1163,85 @@ const BillingPage = () => {
             </div>
           </form>
         </AdminModal>
+        <AdminModal open={Boolean(pendingStatusUpdate)} onClose={() => setPendingStatusUpdate(null)} title="Confirm status change">
+          {pendingStatusUpdate && (
+            <div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex gap-3">
+                  <AlertTriangle size={19} className="mt-0.5 shrink-0 text-amber-600" />
+                  <div>
+                    <p className="font-semibold text-black">Please confirm this action</p>
+                    <p className="mt-1 text-sm leading-6 text-black/58">
+                      You are changing invoice <span className="font-semibold text-black">{pendingStatusUpdate.invoice.invoiceNumber}</span> from <span className="font-semibold text-black">{formatStatus(pendingStatusUpdate.invoice.status)}</span> to <span className="font-semibold text-black">{formatStatus(pendingStatusUpdate.status)}</span>. Make sure this is intentional.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-5 flex justify-end gap-3 border-t border-black/10 pt-5">
+                <button type="button" onClick={() => setPendingStatusUpdate(null)} className="h-10 rounded-md border border-black/10 px-4 text-sm font-bold hover:bg-black hover:text-white">Cancel</button>
+                <button type="button" onClick={() => updateInvoiceStatus(pendingStatusUpdate.invoice, pendingStatusUpdate.status)} className="h-10 rounded-md bg-black px-4 text-sm font-bold text-white hover:bg-black/75">Confirm change</button>
+              </div>
+            </div>
+          )}
+        </AdminModal>
+      </div>
+    </AdminLayout>
+  );
+};
+
+const ReceiptsPage = () => {
+  const [receipts, setReceipts] = useState([]);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [pageState, setPageState] = useState({ loading: true, error: '' });
+
+  useEffect(() => {
+    let isMounted = true;
+    adminApi.get('/admin-billing/receipts')
+      .then((response) => {
+        if (isMounted) {
+          setReceipts(response.data?.data?.receipts || []);
+          setPageState({ loading: false, error: '' });
+        }
+      })
+      .catch((error) => {
+        if (isMounted) setPageState({ loading: false, error: getErrorMessage(error, 'Unable to load receipts') });
+      });
+    return () => { isMounted = false; };
+  }, []);
+
+  const rows = receipts.map((receipt) => [
+    <div key={`${receipt.id}-receipt`}><p className="font-mono font-medium">{receipt.receiptNumber}</p><p className="mt-1 text-xs text-black/42">{receipt.description}</p></div>,
+    <div key={`${receipt.id}-customer`}><p className="font-medium">{receipt.customerName}</p><p className="mt-1 text-xs text-black/42">{receipt.customerEmail}</p></div>,
+    formatMoney(receipt.amount, receipt.currency),
+    receipt.paidDate,
+    <button key={`${receipt.id}-view`} onClick={() => setSelectedReceipt(receipt)} className="rounded-md border border-black/10 px-3 py-1.5 text-xs font-bold hover:bg-black hover:text-white">View</button>,
+  ]);
+
+  return (
+    <AdminLayout>
+      <div className="space-y-8">
+        <PageHeader eyebrow="Billing" title="Receipts" body="Review every successful receipt sent to Spilight customers." />
+        {pageState.error && <div className="rounded-lg border border-black/10 bg-white p-4 text-sm font-medium">{pageState.error}</div>}
+        {pageState.loading ? (
+          <div className="rounded-lg border border-black/10 bg-white p-6 text-sm text-black/54">Loading receipts...</div>
+        ) : rows.length ? (
+          <DataTable columns={['Receipt', 'Customer', 'Amount', 'Paid date', 'View']} rows={rows} />
+        ) : (
+          <div className="rounded-lg border border-black/10 bg-white p-8 text-center text-sm text-black/50">No successful receipts have been sent yet.</div>
+        )}
+        <AdminModal open={Boolean(selectedReceipt)} onClose={() => setSelectedReceipt(null)} title={selectedReceipt ? `Receipt ${selectedReceipt.receiptNumber}` : 'Receipt'}>
+          {selectedReceipt && (
+            <div className="space-y-5">
+              <div className="grid gap-5 rounded-lg bg-[#f7f7f7] p-5 sm:grid-cols-2">
+                <div><p className="text-xs font-bold uppercase tracking-wider text-black/38">Customer</p><p className="mt-2 font-semibold">{selectedReceipt.customerName}</p><p className="mt-1 text-xs text-black/48">{selectedReceipt.customerEmail}</p></div>
+                <div><p className="text-xs font-bold uppercase tracking-wider text-black/38">Paid date</p><p className="mt-2 font-semibold">{selectedReceipt.paidDate}</p></div>
+                <div><p className="text-xs font-bold uppercase tracking-wider text-black/38">Description</p><p className="mt-2 font-semibold">{selectedReceipt.description}</p></div>
+                <div><p className="text-xs font-bold uppercase tracking-wider text-black/38">Amount paid</p><p className="mt-2 text-xl font-semibold">{formatMoney(selectedReceipt.amount, selectedReceipt.currency)}</p></div>
+              </div>
+              {selectedReceipt.notes && <p className="rounded-lg border border-black/10 p-4 text-sm leading-6 text-black/58">{selectedReceipt.notes}</p>}
+            </div>
+          )}
+        </AdminModal>
       </div>
     </AdminLayout>
   );
@@ -1002,25 +1258,133 @@ const billableServices = [
 ];
 
 const InvoiceReceiptPage = () => {
+  const location = useLocation();
+  const receiptInvoice = location.state?.receiptInvoice;
   const today = new Date().toISOString().slice(0, 10);
-  const [documentType, setDocumentType] = useState('invoice');
+  const [documentType, setDocumentType] = useState(receiptInvoice ? 'receipt' : 'invoice');
   const [details, setDetails] = useState({
-    recipientName: '',
-    recipientEmail: '',
-    documentNumber: `SPI-${new Date().getFullYear()}-00001`,
+    recipientUserId: receiptInvoice?.userId || '',
+    sourceInvoiceId: receiptInvoice?.id || '',
+    recipientName: receiptInvoice?.customerName || '',
+    recipientEmail: receiptInvoice?.customerEmail || '',
+    documentNumber: receiptInvoice ? `RCT-${receiptInvoice.invoiceNumber}` : `SPI-${new Date().getFullYear()}-00001`,
     issueDate: today,
-    dueDate: '',
-    currency: 'USD',
-    taxRate: '0',
-    notes: 'Thank you for choosing Spilight.',
+    dueDate: receiptInvoice ? today : '',
+    currency: receiptInvoice?.currency || 'USD',
+    taxRate: String(receiptInvoice?.taxRate || 0),
+    notes: receiptInvoice ? `Payment received for invoice ${receiptInvoice.invoiceNumber}.` : 'Thank you for choosing Spilight.',
   });
-  const [items, setItems] = useState([{ id: crypto.randomUUID(), description: billableServices[0], quantity: 1, rate: 0 }]);
+  const sourceLineItems = (() => {
+    if (Array.isArray(receiptInvoice?.lineItems)) return receiptInvoice.lineItems;
+    if (typeof receiptInvoice?.lineItems !== 'string') return [];
+    try {
+      const parsed = JSON.parse(receiptInvoice.lineItems);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const [items, setItems] = useState(() => sourceLineItems.length
+    ? sourceLineItems.map((item) => ({ ...item, id: crypto.randomUUID() }))
+    : receiptInvoice
+      ? [{
+        id: crypto.randomUUID(),
+        description: receiptInvoice.title && billableServices.includes(receiptInvoice.title) ? receiptInvoice.title : billableServices[0],
+        quantity: 1,
+        rate: receiptInvoice.amount || 0,
+      }]
+      : billableServices.map((description) => ({
+        id: crypto.randomUUID(),
+        description,
+        quantity: 1,
+        rate: 0,
+      })));
   const [sendState, setSendState] = useState({ sending: false, error: '', success: '' });
+  const [recipientUsers, setRecipientUsers] = useState([]);
+  const [recipientState, setRecipientState] = useState({ loading: true, error: '', activeField: '' });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    adminApi.get('/admin-auth/users')
+      .then((response) => {
+        if (isMounted) {
+          setRecipientUsers(response.data?.data?.users || []);
+          setRecipientState({ loading: false, error: '', activeField: '' });
+        }
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setRecipientState({ loading: false, error: getErrorMessage(error, 'Unable to load customer accounts'), activeField: '' });
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (receiptInvoice) return;
+
+    let isMounted = true;
+    adminApi.get('/admin-billing/documents/next-number', { params: { type: documentType } })
+      .then((response) => {
+        const documentNumber = response.data?.data?.documentNumber;
+        if (isMounted && documentNumber) {
+          setDetails((current) => ({ ...current, documentNumber }));
+        }
+      })
+      .catch(() => {
+        // The server also resolves stale or duplicate numbers when sending.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [documentType, receiptInvoice]);
 
   const updateDetail = (field) => (event) => setDetails((current) => ({ ...current, [field]: event.target.value }));
+  const selectRecipient = (user) => {
+    setDetails((current) => ({
+      ...current,
+      recipientUserId: user.id,
+      recipientName: user.name,
+      recipientEmail: user.email,
+    }));
+    setRecipientState((current) => ({ ...current, activeField: '' }));
+  };
+  const updateRecipient = (field) => (event) => {
+    const value = event.target.value;
+    const match = recipientUsers.find((user) => String(user[field]).toLowerCase() === value.trim().toLowerCase());
+
+    if (match) {
+      selectRecipient(match);
+      return;
+    }
+
+    setDetails((current) => ({
+      ...current,
+      recipientUserId: '',
+      recipientName: field === 'name' ? value : '',
+      recipientEmail: field === 'email' ? value : '',
+    }));
+    setRecipientState((current) => ({ ...current, activeField: field }));
+  };
+  const recipientMatches = (field) => {
+    const query = (field === 'name' ? details.recipientName : details.recipientEmail).trim().toLowerCase();
+    if (!query) return recipientUsers.slice(0, 6);
+
+    return recipientUsers
+      .filter((user) => String(field === 'name' ? user.name : user.email).toLowerCase().includes(query))
+      .slice(0, 6);
+  };
+  const selectedRecipientIsValid = recipientUsers.some((user) => (
+    user.id === details.recipientUserId
+    && user.name === details.recipientName
+    && user.email === details.recipientEmail
+  ));
   const updateItem = (id, field, value) => setItems((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item));
-  const addItem = () => setItems((current) => [...current, { id: crypto.randomUUID(), description: billableServices[0], quantity: 1, rate: 0 }]);
-  const removeItem = (id) => setItems((current) => current.length === 1 ? current : current.filter((item) => item.id !== id));
   const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.rate || 0), 0);
   const tax = subtotal * (Number(details.taxRate || 0) / 100);
   const total = subtotal + tax;
@@ -1034,6 +1398,11 @@ const InvoiceReceiptPage = () => {
   const displayDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
   const sendDocument = async () => {
+    if (!selectedRecipientIsValid) {
+      setSendState({ sending: false, error: 'Select a recipient from the customer account results.', success: '' });
+      return;
+    }
+
     setSendState({ sending: true, error: '', success: '' });
     try {
       const response = await adminApi.post('/admin-billing/documents/send', {
@@ -1041,6 +1410,10 @@ const InvoiceReceiptPage = () => {
         ...details,
         items: items.map(({ description, quantity, rate }) => ({ description, quantity: Number(quantity), rate: Number(rate) })),
       });
+      const documentNumber = response.data?.data?.documentNumber;
+      if (documentNumber) {
+        setDetails((current) => ({ ...current, documentNumber }));
+      }
       setSendState({ sending: false, error: '', success: response.data?.message || `${formatStatus(documentType)} sent successfully.` });
     } catch (error) {
       setSendState({ sending: false, error: getErrorMessage(error, `Unable to send ${documentType}`), success: '' });
@@ -1060,7 +1433,7 @@ const InvoiceReceiptPage = () => {
               </button>
             ))}
           </div>
-          <button onClick={sendDocument} disabled={sendState.sending} className="inline-flex h-10 items-center gap-2 rounded-md bg-black px-4 text-sm font-bold text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/40">
+          <button onClick={sendDocument} disabled={sendState.sending || !selectedRecipientIsValid} className="inline-flex h-10 items-center gap-2 rounded-md bg-black px-4 text-sm font-bold text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/40">
             <Send size={16} /> {sendState.sending ? 'Sending...' : `Send ${documentType}`}
           </button>
         </div>
@@ -1074,8 +1447,58 @@ const InvoiceReceiptPage = () => {
               <p className="mt-1 text-sm text-black/45">Changes appear in the preview instantly.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div><label className="mb-2 block text-xs font-bold text-black/55">Recipient name</label><input value={details.recipientName} onChange={updateDetail('recipientName')} className={documentInputClass} placeholder="Customer name" /></div>
-              <div><label className="mb-2 block text-xs font-bold text-black/55">Recipient email</label><input type="email" value={details.recipientEmail} onChange={updateDetail('recipientEmail')} className={documentInputClass} placeholder="customer@example.com" /></div>
+              {[
+                { field: 'name', detail: 'recipientName', label: 'Recipient name', type: 'text', placeholder: 'Search customer name' },
+                { field: 'email', detail: 'recipientEmail', label: 'Recipient email', type: 'email', placeholder: 'Search customer email' },
+              ].map(({ field, detail, label, type, placeholder }) => {
+                const matches = recipientMatches(field);
+                return (
+                  <div key={field} className="relative">
+                    <label className="mb-2 block text-xs font-bold text-black/55">{label}</label>
+                    <input
+                      type={type}
+                      value={details[detail]}
+                      onChange={updateRecipient(field)}
+                      onFocus={() => setRecipientState((current) => ({ ...current, activeField: field }))}
+                      onBlur={() => window.setTimeout(() => setRecipientState((current) => ({ ...current, activeField: '' })), 120)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') setRecipientState((current) => ({ ...current, activeField: '' }));
+                        if (event.key === 'Enter' && matches.length > 0) {
+                          event.preventDefault();
+                          selectRecipient(matches[0]);
+                        }
+                      }}
+                      className={`${documentInputClass} ${details.recipientUserId ? 'border-emerald-300 bg-emerald-50/40' : ''}`}
+                      placeholder={recipientState.loading ? 'Loading customer accounts...' : placeholder}
+                      autoComplete="off"
+                      disabled={recipientState.loading}
+                      role="combobox"
+                      aria-expanded={recipientState.activeField === field}
+                      aria-autocomplete="list"
+                    />
+                    {recipientState.activeField === field && !recipientState.loading && (
+                      <div className="absolute z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-black/10 bg-white p-1 shadow-xl">
+                        {matches.length > 0 ? matches.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectRecipient(user)}
+                            className="block w-full rounded px-3 py-2 text-left hover:bg-black hover:text-white"
+                          >
+                            <span className="block truncate text-sm font-semibold">{user.name}</span>
+                            <span className="block truncate text-xs opacity-55">{user.email}</span>
+                          </button>
+                        )) : (
+                          <p className="px-3 py-3 text-sm text-black/45">No matching customer account.</p>
+                        )}
+                      </div>
+                    )}
+                    {details.recipientUserId && <p className="mt-1 text-[11px] font-medium text-emerald-700">Verified customer account</p>}
+                  </div>
+                );
+              })}
+              {recipientState.error && <p className="sm:col-span-2 text-xs font-medium text-red-600">{recipientState.error}</p>}
               <div><label className="mb-2 block text-xs font-bold text-black/55">Document number</label><input value={details.documentNumber} onChange={updateDetail('documentNumber')} className={documentInputClass} /></div>
               <div><label className="mb-2 block text-xs font-bold text-black/55">Currency</label><input value={details.currency} onChange={updateDetail('currency')} maxLength={3} className={`${documentInputClass} uppercase`} /></div>
               <div><label className="mb-2 block text-xs font-bold text-black/55">Issue date</label><input type="date" value={details.issueDate} onChange={updateDetail('issueDate')} className={documentInputClass} /></div>
@@ -1083,16 +1506,15 @@ const InvoiceReceiptPage = () => {
             </div>
 
             <div className="border-t border-black/10 pt-5">
-              <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-bold">Line items</h3><button type="button" onClick={addItem} className="inline-flex items-center gap-1.5 text-xs font-bold text-black/55 hover:text-black"><Plus size={15} /> Add item</button></div>
+              <div className="mb-4"><h3 className="text-sm font-bold">Line items</h3></div>
               <div className="space-y-3">
                 {items.map((item) => (
-                  <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_70px_100px_36px] gap-2">
+                  <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_70px_100px] gap-2">
                     <select value={item.description} onChange={(event) => updateItem(item.id, 'description', event.target.value)} className={documentInputClass} aria-label="Service">
                       {billableServices.map((service) => <option key={service} value={service}>{service}</option>)}
                     </select>
                     <input type="number" min="0" value={item.quantity} onChange={(event) => updateItem(item.id, 'quantity', event.target.value)} className={documentInputClass} aria-label="Quantity" />
                     <input type="number" min="0" step="0.01" value={item.rate} onChange={(event) => updateItem(item.id, 'rate', event.target.value)} className={documentInputClass} aria-label="Rate" />
-                    <button type="button" onClick={() => removeItem(item.id)} disabled={items.length === 1} className="grid h-10 place-items-center rounded-md border border-black/10 text-black/40 hover:bg-black hover:text-white disabled:opacity-30" aria-label="Remove item"><Trash2 size={15} /></button>
                   </div>
                 ))}
               </div>
@@ -1196,10 +1618,15 @@ const SettingsPage = () => (
   </AdminLayout>
 );
 
-const DataTable = ({ columns, rows }) => (
+const DataTable = ({ columns, rows, columnWidths }) => (
   <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-left">
+        {columnWidths && (
+          <colgroup>
+            {columnWidths.map((width, index) => <col key={`${width}-${index}`} style={{ width }} />)}
+          </colgroup>
+        )}
         <thead className="border-b border-black/10 bg-[#fafafa] text-xs uppercase tracking-[0.12em] text-black/40">
           <tr>{columns.map((column) => <th key={column} className="px-5 py-3 font-bold">{column}</th>)}</tr>
         </thead>
@@ -1236,7 +1663,9 @@ function App() {
       <Route path="/" element={<Login />} />
       <Route path="/dashboard" element={<ProtectedAdminRoute><Overview /></ProtectedAdminRoute>} />
       <Route path="/users" element={<ProtectedAdminRoute><UsersPage /></ProtectedAdminRoute>} />
+      <Route path="/users/:userId" element={<ProtectedAdminRoute><UserDetailsPage /></ProtectedAdminRoute>} />
       <Route path="/billing" element={<ProtectedAdminRoute><BillingPage /></ProtectedAdminRoute>} />
+      <Route path="/billing/receipts" element={<ProtectedAdminRoute><ReceiptsPage /></ProtectedAdminRoute>} />
       <Route path="/invoice-receipt" element={<ProtectedAdminRoute><InvoiceReceiptPage /></ProtectedAdminRoute>} />
       <Route path="/infrastructure" element={<ProtectedAdminRoute><InfrastructurePage /></ProtectedAdminRoute>} />
       <Route path="/audit-logs" element={<ProtectedAdminRoute><AuditLogsPage /></ProtectedAdminRoute>} />
