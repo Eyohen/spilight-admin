@@ -27,6 +27,7 @@ import {
   Server,
   Settings,
   Shield,
+  Trophy,
   UserRound,
   Users,
   Wifi,
@@ -78,6 +79,7 @@ adminApi.interceptors.request.use((config) => {
 const navItems = [
   { name: 'Overview', path: '/dashboard', icon: Gauge },
   { name: 'Users', path: '/users', icon: Users },
+  { name: 'Customer Wins', path: '/customer-wins', icon: Trophy },
   { name: 'Billing', path: '/billing', icon: CreditCard, children: [
     { name: 'Rev&Inv', path: '/billing' },
     { name: 'Receipts', path: '/billing/receipts' },
@@ -1560,6 +1562,93 @@ const InvoiceReceiptPage = () => {
   );
 };
 
+const customerWinSeed = [
+  { id: 1, name: 'StarVault', contact: 'Daniel Edward', type: 'subscription', state: 'pending' },
+  { id: 2, name: 'XYZ Technologies', contact: 'Tia', type: 'service', state: 'celebrated' },
+  { id: 3, name: 'Mono', contact: 'Ada', type: 'both', state: 'celebrated' },
+  { id: 4, name: 'Nomba', contact: 'Caro', type: 'subscription', state: 'celebrated' },
+  { id: 5, name: 'Paystack', contact: 'Customer team', type: 'service', state: 'celebrated' },
+  { id: 6, name: 'Cowrywise', contact: 'Finance team', type: 'subscription', state: 'celebrated' },
+  { id: 7, name: 'Risevest', contact: 'Partnerships team', type: 'both', state: 'celebrated' },
+];
+const winTypeLabel = { subscription: 'Monthly subscription', service: 'Service fee', both: 'Subscription + service fee' };
+const confettiPieces = Array.from({ length: 90 }, (_, index) => ({
+  id: index,
+  left: (index * 37) % 100,
+  delay: (index % 15) * 0.08,
+  duration: 3.2 + (index % 7) * 0.28,
+  drift: ((index * 29) % 180) - 90,
+  color: ['#047857', '#34d399', '#fbbf24', '#f97316', '#38bdf8', '#a78bfa'][index % 6],
+}));
+
+const CustomerWinsPage = () => {
+  const [customers, setCustomers] = useState(customerWinSeed);
+  const [companyName, setCompanyName] = useState('');
+  const [winType, setWinType] = useState('subscription');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [celebrationStage, setCelebrationStage] = useState('confirm');
+  const [showConfetti, setShowConfetti] = useState(false);
+  const pending = customers.filter((customer) => customer.state === 'pending');
+  const celebrated = customers.filter((customer) => customer.state === 'celebrated' && (filter === 'all' || customer.type === filter) && customer.name.toLowerCase().includes(query.toLowerCase()));
+  const stats = [
+    ['Total customers', customers.length, 'Building with us'],
+    ['New this month', customers.filter((customer) => customer.id > 4).length, 'New beginnings this month'],
+    ['Monthly subscribers', customers.filter((customer) => ['subscription', 'both'].includes(customer.type)).length, 'Monthly subscriptions'],
+    ['Service fee customers', customers.filter((customer) => ['service', 'both'].includes(customer.type)).length, 'Service agreements'],
+    ['Pending celebration', pending.length, 'Ready for their moment'],
+  ];
+  const addCustomer = (event) => {
+    event.preventDefault();
+    if (!companyName.trim()) return;
+    setCustomers((current) => [{ id: Date.now(), name: companyName.trim(), contact: 'New customer', type: winType, state: 'pending' }, ...current]);
+    setCompanyName('');
+  };
+  useEffect(() => {
+    if (celebrationStage !== 'bell') return undefined;
+    setShowConfetti(true);
+    const confettiTimer = window.setTimeout(() => setShowConfetti(false), 8000);
+    const storyTimer = window.setTimeout(() => setCelebrationStage('story'), 120000);
+    return () => {
+      window.clearTimeout(confettiTimer);
+      window.clearTimeout(storyTimer);
+    };
+  }, [celebrationStage]);
+
+  const openCelebration = (customer) => {
+    setSelectedCustomer(customer);
+    setCelebrationStage('confirm');
+  };
+  const closeCelebration = () => {
+    setSelectedCustomer(null);
+    setCelebrationStage('confirm');
+    setShowConfetti(false);
+  };
+  const completeCelebration = () => {
+    if (!selectedCustomer) return;
+    setCustomers((current) => current.map((customer) => customer.id === selectedCustomer.id ? { ...customer, state: 'celebrated' } : customer));
+    closeCelebration();
+  };
+
+  return <AdminLayout><div className="mx-auto max-w-7xl space-y-6">
+    <PageHeader eyebrow="Customers" title="Customer Wins 🎉" body="Celebrate every customer who subscribes, agrees to a service fee, or chooses both." />
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{stats.map(([label,value,detail]) => <article key={label} className="rounded-lg border border-black/10 bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-black/40">{label}</p><p className="mt-3 text-3xl font-semibold tracking-[-.04em]">{String(value).padStart(2,'0')}</p><p className="mt-2 text-xs text-black/42">{detail}</p></article>)}</section>
+    <section className="rounded-lg border border-black/10 bg-white p-5"><h2 className="text-lg font-semibold">Record a new customer</h2><p className="mt-1 text-sm text-black/48">Enter the company and what they signed up for.</p><form onSubmit={addCustomer} className="mt-5"><div className="flex flex-col gap-2 sm:flex-row"><input id="customer-win-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Company name" className="h-11 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm outline-none focus:border-black"/><button className="h-11 rounded-md bg-black px-5 text-sm font-bold text-white">✓ Record and save</button></div><p className="mb-2 mt-4 text-xs font-bold uppercase tracking-[.12em] text-black/40">Signed up for</p><div className="grid gap-2 sm:grid-cols-3">{Object.entries(winTypeLabel).map(([value,label]) => <button type="button" key={value} onClick={() => setWinType(value)} className={`h-11 rounded-md border px-3 text-left text-sm ${winType===value?'border-black bg-black text-white':'border-black/10 bg-white text-black/55'}`}>◉&nbsp; {label}</button>)}</div></form></section>
+    <section className="overflow-hidden rounded-lg border border-emerald-900/15 bg-emerald-50"><div className="grid min-h-36 items-center gap-5 p-6 sm:grid-cols-[1fr_260px]"><div><p className="text-[10px] font-bold uppercase tracking-[.12em] text-emerald-700">🎉 Small ritual, meaningful moment.</p><h2 className="mt-2 text-xl font-semibold">A new customer. A new beginning.</h2><p className="mt-2 max-w-2xl text-sm text-black/50">Behind every payment is a team that believes in us. Let&apos;s give them a welcome worth remembering.</p></div><div className="hidden text-center text-7xl sm:block">🔔</div></div></section>
+    <section><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Ready to be welcomed <span className="ml-2 text-xs text-amber-600">{pending.length} pending</span></h2><span className="text-xs text-black/40">Awaiting celebration</span></div><div className="overflow-hidden rounded-lg border border-black/10 bg-white">{pending.map((customer) => <div key={customer.id} className="flex flex-col gap-3 border-b border-black/10 p-4 last:border-0 sm:flex-row sm:items-center"><span className="grid h-9 w-9 place-items-center rounded-md bg-emerald-50 font-bold text-emerald-700">{customer.name[0]}</span><div className="min-w-0 flex-1"><p className="font-semibold">{customer.name}</p><p className="mt-1 text-xs text-black/40">Account owner: {customer.contact}</p></div><span className="w-fit rounded-full bg-black/[.04] px-2.5 py-1 text-xs">{winTypeLabel[customer.type]}</span><span className="text-xs font-semibold text-emerald-700">✓ Payment confirmed</span><button onClick={() => openCelebration(customer)} className="rounded-md border border-emerald-700/25 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">🎉 Celebrate</button></div>)}{pending.length===0&&<p className="p-6 text-center text-sm text-black/45">Everyone has been celebrated.</p>}</div></section>
+    <section><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-semibold">Every customer is a new beginning.</h2><p className="mt-1 text-sm text-black/45">The teams who chose to build their next chapter with us.</p></div><div className="flex gap-2"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customers…" className="h-10 rounded-md border border-black/10 px-3 text-sm outline-none focus:border-black"/><select value={filter} onChange={(event) => setFilter(event.target.value)} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm"><option value="all">All packages</option><option value="subscription">Subscriptions</option><option value="service">Service fees</option><option value="both">Both</option></select></div></div><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{celebrated.map((customer) => <article key={customer.id} className="rounded-lg border border-black/10 bg-white p-5"><div className="flex justify-between"><span className="grid h-10 w-10 place-items-center rounded-md bg-black text-sm font-bold text-white">{customer.name[0]}</span><span>✨</span></div><h3 className="mt-4 font-semibold">{customer.name}</h3><span className="mt-2 inline-flex rounded-full bg-black/[.04] px-2.5 py-1 text-xs text-black/58">{winTypeLabel[customer.type]}</span><p className="mt-6 border-t border-black/10 pt-3 text-xs font-semibold text-emerald-700">✓ Celebrated</p></article>)}</div></section>
+
+    {showConfetti && <div className="pointer-events-none fixed inset-0 z-[100] overflow-hidden" aria-hidden="true">{confettiPieces.map((piece) => <i key={piece.id} className="customer-win-confetti absolute -top-5 h-3 w-2" style={{left:`${piece.left}%`,backgroundColor:piece.color,animationDelay:`${piece.delay}s`,animationDuration:`${piece.duration}s`,'--confetti-drift':`${piece.drift}px`}}/>)}</div>}
+    {selectedCustomer && <div className="fixed inset-0 z-[90] grid place-items-center bg-[#183128]/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="celebrate-title" onMouseDown={(event) => event.target === event.currentTarget && closeCelebration()}>
+      {celebrationStage === 'confirm' && <section className="w-full max-w-xl rounded-lg border border-black/10 bg-white p-6 shadow-2xl sm:p-8"><div className="flex items-start justify-between"><span className="grid h-10 w-10 place-items-center rounded-md bg-emerald-50 text-emerald-700"><Bell size={18}/></span><button onClick={closeCelebration} className="text-black/40 hover:text-black" aria-label="Close celebration modal"><X size={17}/></button></div><h2 id="celebrate-title" className="mt-7 text-xl font-semibold tracking-[-.03em]">Ready to welcome a new customer?</h2><p className="mt-2 text-sm text-black/45">This will start the Customer Win ritual.</p><dl className="mt-7 space-y-4 border-y border-black/10 py-5 text-sm"><div className="grid grid-cols-[110px_1fr] gap-3"><dt className="text-black/42">Customer</dt><dd className="font-semibold">{selectedCustomer.name}</dd></div><div className="grid grid-cols-[110px_1fr] gap-3"><dt className="text-black/42">Package</dt><dd><span className="rounded border border-emerald-700/20 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">{winTypeLabel[selectedCustomer.type]}</span></dd></div><div className="grid grid-cols-[110px_1fr] gap-3"><dt className="text-black/42">Use case</dt><dd>Deploy and manage their web applications</dd></div><div className="grid grid-cols-[110px_1fr] gap-3"><dt className="text-black/42">Account owner</dt><dd>{selectedCustomer.contact}</dd></div><div className="grid grid-cols-[110px_1fr] gap-3"><dt className="text-black/42">Payment</dt><dd className="font-medium text-emerald-700">✓ Confirmed</dd></div></dl><p className="mt-5 text-xs text-black/42">Demo celebration — no live customer records will be changed.</p><div className="mt-8 flex justify-end gap-2"><button onClick={closeCelebration} className="h-10 rounded-md border border-black/15 px-4 text-sm font-medium hover:bg-black/[.03]">Cancel</button><button onClick={() => setCelebrationStage('bell')} className="flex h-10 items-center gap-2 rounded-md bg-emerald-800 px-4 text-sm font-bold text-white hover:bg-emerald-900"><Bell size={15}/> Ring the Launch Bell →</button></div></section>}
+      {celebrationStage === 'bell' && <section className="relative w-full max-w-xl rounded-lg bg-white px-8 py-10 text-center shadow-2xl sm:py-14"><button onClick={closeCelebration} className="absolute right-5 top-5 text-black/40 hover:text-black" aria-label="Close"><X size={17}/></button><p className="text-[10px] font-bold uppercase tracking-[.12em] text-emerald-700">🎉 New customer</p><div className="mx-auto mt-7 grid h-40 w-40 place-items-center rounded-full bg-[#d4dec2] text-8xl shadow-inner">🔔</div><h2 className="mt-8 text-2xl font-semibold uppercase tracking-[-.03em]">{selectedCustomer.name}</h2><p className="mt-5 text-sm text-black/45">Welcome to the family.</p><p className="mt-7 text-[10px] font-bold uppercase tracking-[.18em] text-amber-600">Ding! &nbsp; Ding! &nbsp; Ding!</p></section>}
+      {celebrationStage === 'story' && <section className="relative w-full max-w-xl rounded-lg bg-white p-8 text-center shadow-2xl sm:p-10"><button onClick={closeCelebration} className="absolute right-5 top-5 text-black/40 hover:text-black" aria-label="Close"><X size={17}/></button><p className="text-[10px] font-bold uppercase tracking-[.12em] text-emerald-700">🎉 A new chapter, together</p><h2 className="mt-7 text-2xl font-semibold tracking-[-.03em]">It&apos;s official. They&apos;re one of us.</h2><p className="mx-auto mt-8 max-w-md text-base leading-7 text-black/60">We just welcomed {selectedCustomer.name}. They&apos;re using our platform to deploy and manage their web applications. They came in through our Growth package, and {selectedCustomer.contact} will be their account owner.</p><button onClick={() => setCelebrationStage('toast')} className="mt-8 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-emerald-800 text-sm font-bold text-white hover:bg-emerald-900">Continue to Toast 🎙 →</button></section>}
+      {celebrationStage === 'toast' && <section className="relative w-full max-w-2xl rounded-lg bg-white p-8 text-center shadow-2xl sm:p-12"><button onClick={closeCelebration} className="absolute right-5 top-5 text-black/40 hover:text-black" aria-label="Close"><X size={17}/></button><p className="text-[10px] font-bold uppercase tracking-[.12em] text-emerald-700">🎉 Here&apos;s to what&apos;s next</p><div className="mt-10 text-8xl">🥂</div><h2 className="mt-8 text-2xl font-semibold uppercase tracking-[-.03em]">🥂 To {selectedCustomer.name}</h2><p className="mt-7 text-lg text-black/55">And to helping them succeed.</p><p className="mt-10 text-sm text-black/45">Everyone raises their drink.</p><button onClick={completeCelebration} className="mt-10 flex h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-800 text-sm font-bold text-white hover:bg-emerald-900">🎙 Complete Celebration</button></section>}
+    </div>}
+  </div></AdminLayout>;
+};
+
 const InfrastructurePage = () => (
   <AdminLayout>
     <div className="space-y-8">
@@ -1664,6 +1753,7 @@ function App() {
       <Route path="/dashboard" element={<ProtectedAdminRoute><Overview /></ProtectedAdminRoute>} />
       <Route path="/users" element={<ProtectedAdminRoute><UsersPage /></ProtectedAdminRoute>} />
       <Route path="/users/:userId" element={<ProtectedAdminRoute><UserDetailsPage /></ProtectedAdminRoute>} />
+      <Route path="/customer-wins" element={<ProtectedAdminRoute><CustomerWinsPage /></ProtectedAdminRoute>} />
       <Route path="/billing" element={<ProtectedAdminRoute><BillingPage /></ProtectedAdminRoute>} />
       <Route path="/billing/receipts" element={<ProtectedAdminRoute><ReceiptsPage /></ProtectedAdminRoute>} />
       <Route path="/invoice-receipt" element={<ProtectedAdminRoute><InvoiceReceiptPage /></ProtectedAdminRoute>} />
