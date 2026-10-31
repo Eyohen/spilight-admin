@@ -1628,7 +1628,7 @@ const CustomerWinsPage = () => {
     if (celebrationStage !== 'bell') return undefined;
     setShowConfetti(true);
     const confettiTimer = window.setTimeout(() => setShowConfetti(false), 8000);
-    const storyTimer = window.setTimeout(() => setCelebrationStage('story'), 30000);
+    const storyTimer = window.setTimeout(() => setCelebrationStage('story'), 2000);
     return () => {
       window.clearTimeout(confettiTimer);
       window.clearTimeout(storyTimer);
